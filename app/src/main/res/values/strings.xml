@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Dictate</string>
+    <string name="settings_title">Dictate Settings</string>
+    <string name="webhook_url_hint">https://your-server.com/api/transcribe</string>
+    <string name="save_button">Save</string>
+</resources>

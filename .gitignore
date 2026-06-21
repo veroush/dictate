@@ -1,0 +1,33 @@
+# Gradle
+.gradle/
+build/
+*/build/
+
+# Local configuration (contains local SDK path, should not be committed)
+local.properties
+
+# Android Studio / IntelliJ
+*.iml
+.idea/
+captures/
+.navigation/
+
+# NDK build artifacts
+.cxx/
+
+# Build outputs
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Keystore files (keep secrets out of version control)
+*.jks
+*.keystore
+
+# Google services config (project-specific, may contain keys)
+google-services.json
+
+# OS files
+.DS_Store
+Thumbs.db
