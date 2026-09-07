@@ -24,6 +24,7 @@ public class TranscriptionActivity extends Activity implements TextToSpeech.OnIn
     private Button settingsButton;
     private String currentPartial = "";
     private boolean listening = false;
+    private boolean isSpeaking = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -46,6 +47,16 @@ public class TranscriptionActivity extends Activity implements TextToSpeech.OnIn
 
         settingsButton.setOnClickListener(v ->
                 startActivity(new Intent(this, SettingsActivity.class)));
+
+        transcriptionText.setOnClickListener(v -> {
+            if (isSpeaking) {
+                textToSpeech.stop();
+                isSpeaking = false;
+                restartListening();
+            }
+        });
+
+        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
 
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
         speechRecognizer.setRecognitionListener(new RecognitionListener() {
@@ -171,6 +182,7 @@ public class TranscriptionActivity extends Activity implements TextToSpeech.OnIn
                 public void onDone(String utteranceId) {
                     // Only resume listening if the user hasn't tapped Stop
                     // in the meantime.
+                    isSpeaking = false;
                     if (listening) {
                         runOnUiThread(() -> restartListening());
                     }
@@ -178,6 +190,7 @@ public class TranscriptionActivity extends Activity implements TextToSpeech.OnIn
 
                 @Override
                 public void onError(String utteranceId) {
+                    isSpeaking = false;
                     if (listening) {
                         runOnUiThread(() -> restartListening());
                     }
@@ -189,6 +202,7 @@ public class TranscriptionActivity extends Activity implements TextToSpeech.OnIn
 
     private void speak(String text) {
         if (!ttsReady) return;
+        isSpeaking = true;
         textToSpeech.speak(text, TextToSpeech.QUEUE_FLUSH, null, "answer");
     }
 
