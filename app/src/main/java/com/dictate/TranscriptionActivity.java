@@ -6,48 +6,46 @@ import android.os.Bundle;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
-import android.view.WindowManager;
+import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
 import android.widget.Button;
 import android.widget.TextView;
 
 import java.util.ArrayList;
+import java.util.Locale;
 
-public class TranscriptionActivity extends Activity {
-
-    private static TranscriptionActivity instance;
+public class TranscriptionActivity extends Activity implements TextToSpeech.OnInitListener {
 
     private SpeechRecognizer speechRecognizer;
+    private TextToSpeech textToSpeech;
+    private boolean ttsReady = false;
     private TextView transcriptionText;
-    private StringBuilder transcript = new StringBuilder();
+    private Button toggleButton;
+    private Button settingsButton;
     private String currentPartial = "";
-    private boolean finishing = false;
-
-    public static TranscriptionActivity getInstance() {
-        return instance;
-    }
+    private boolean listening = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        instance = this;
-
-        setShowWhenLocked(true);
-        setTurnScreenOn(true);
-
-        getWindow().addFlags(
-                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON |
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
-                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
-        );
-
         setContentView(R.layout.activity_transcription);
 
-        transcriptionText = findViewById(R.id.transcriptionText);
-        transcriptionText.setText("Listening...");
+        textToSpeech = new TextToSpeech(this, this);
 
-        findViewById(R.id.rootLayout).setOnClickListener(v -> stopTranscription());
-        Button stopButton = findViewById(R.id.stopButton);
-        stopButton.setOnClickListener(v -> stopTranscription());
+        transcriptionText = findViewById(R.id.transcriptionText);
+        toggleButton = findViewById(R.id.toggleButton);
+        settingsButton = findViewById(R.id.settingsButton);
+
+        toggleButton.setOnClickListener(v -> {
+            if (listening) {
+                stopListening();
+            } else {
+                startListening();
+            }
+        });
+
+        settingsButton.setOnClickListener(v ->
+                startActivity(new Intent(this, SettingsActivity.class)));
 
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
         speechRecognizer.setRecognitionListener(new RecognitionListener() {
@@ -73,24 +71,44 @@ public class TranscriptionActivity extends Activity {
 
             @Override
             public void onError(int error) {
-                if (finishing) return;
-                updateDisplay();
+                if (!listening) return;
+                // Recognizer times out on silence -- just restart and keep going.
                 restartListening();
             }
 
             @Override
             public void onResults(Bundle results) {
-                if (finishing) return;
+                if (!listening) return;
                 ArrayList<String> matches = results.getStringArrayList(
                         SpeechRecognizer.RESULTS_RECOGNITION);
                 if (matches != null && !matches.isEmpty()) {
-                    if (transcript.length() > 0) {
-                        transcript.append(" ");
-                    }
-                    transcript.append(matches.get(0));
+                    String finalText = matches.get(0);
+                    currentPartial = "";
+                    transcriptionText.setText(finalText);
+                    // Stop listening now -- don't resume until the answer has
+                    // been spoken, or the mic will pick up our own voice and
+                    // loop forever.
+                    speechRecognizer.cancel();
+                    WebhookClient.send(TranscriptionActivity.this, finalText,
+                            new WebhookClient.AnswerCallback() {
+                                @Override
+                                public void onAnswer(String answer) {
+                                    runOnUiThread(() -> {
+                                        transcriptionText.setText(answer);
+                                        speak(answer);
+                                    });
+                                }
+
+                                @Override
+                                public void onError(String message) {
+                                    runOnUiThread(() -> {
+                                        transcriptionText.setText("Error: " + message);
+                                        restartListening();
+                                    });
+                                }
+                            });
+                    return;
                 }
-                currentPartial = "";
-                updateDisplay();
                 restartListening();
             }
 
@@ -100,7 +118,7 @@ public class TranscriptionActivity extends Activity {
                         SpeechRecognizer.RESULTS_RECOGNITION);
                 if (matches != null && !matches.isEmpty()) {
                     currentPartial = matches.get(0);
-                    updateDisplay();
+                    transcriptionText.setText(currentPartial);
                 }
             }
 
@@ -110,13 +128,14 @@ public class TranscriptionActivity extends Activity {
         });
     }
 
-    @Override
-    protected void onStart() {
-        super.onStart();
-        startListening();
+    private void startListening() {
+        listening = true;
+        toggleButton.setText("Stop");
+        transcriptionText.setText("Listening...");
+        beginRecognition();
     }
 
-    private void startListening() {
+    private void beginRecognition() {
         Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
         intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
                 RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
@@ -125,48 +144,63 @@ public class TranscriptionActivity extends Activity {
     }
 
     private void restartListening() {
+        if (!listening) return;
         speechRecognizer.cancel();
-        startListening();
+        beginRecognition();
     }
 
-    private void updateDisplay() {
-        String display = transcript.toString();
-        if (!currentPartial.isEmpty()) {
-            if (!display.isEmpty()) {
-                display += " ";
-            }
-            display += currentPartial;
-        }
-        transcriptionText.setText(display.isEmpty() ? "Listening..." : display);
+    private void stopListening() {
+        listening = false;
+        toggleButton.setText("Start");
+        speechRecognizer.stopListening();
+        speechRecognizer.cancel();
+        textToSpeech.stop();
+        transcriptionText.setText("Tap Start to begin");
     }
 
     @Override
-    public void onBackPressed() {
+    public void onInit(int status) {
+        if (status == TextToSpeech.SUCCESS) {
+            textToSpeech.setVoice(textToSpeech.getDefaultVoice());
+            textToSpeech.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                @Override
+                public void onStart(String utteranceId) {
+                }
+
+                @Override
+                public void onDone(String utteranceId) {
+                    // Only resume listening if the user hasn't tapped Stop
+                    // in the meantime.
+                    if (listening) {
+                        runOnUiThread(() -> restartListening());
+                    }
+                }
+
+                @Override
+                public void onError(String utteranceId) {
+                    if (listening) {
+                        runOnUiThread(() -> restartListening());
+                    }
+                }
+            });
+            ttsReady = true;
+        }
     }
 
-    public void stopTranscription() {
-        if (finishing) return;
-        finishing = true;
-        ButtonInterceptorService.transcriptionEnded();
-        speechRecognizer.stopListening();
-        String text = transcript.toString();
-        if (!text.isEmpty()) {
-            transcriptionText.setText(text);
-            WebhookClient.send(this, text);
-        } else {
-            transcriptionText.setText("Nothing recorded");
-        }
-        finish();
+    private void speak(String text) {
+        if (!ttsReady) return;
+        textToSpeech.speak(text, TextToSpeech.QUEUE_FLUSH, null, "answer");
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        ButtonInterceptorService.transcriptionEnded();
         if (speechRecognizer != null) {
             speechRecognizer.destroy();
         }
-        instance = null;
+        if (textToSpeech != null) {
+            textToSpeech.stop();
+            textToSpeech.shutdown();
+        }
     }
-
 }

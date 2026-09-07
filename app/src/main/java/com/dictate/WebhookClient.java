@@ -22,30 +22,29 @@ public class WebhookClient {
     private static final String TAG = "DictateWebhook";
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
     private static final OkHttpClient client = new OkHttpClient();
-    private static String cachedUrl = "";
 
-    public static void init(Context context) {
-        SharedPreferences prefs = context.getSharedPreferences(
-                SettingsActivity.PREFS_NAME, Context.MODE_PRIVATE);
-        cachedUrl = prefs.getString(SettingsActivity.KEY_WEBHOOK_URL, "");
+    public interface AnswerCallback {
+        void onAnswer(String answer);
+        void onError(String message);
     }
 
-    public static void send(Context context, String text) {
+    public static void send(Context context, String text, AnswerCallback callback) {
         SharedPreferences prefs = context.getSharedPreferences(
                 SettingsActivity.PREFS_NAME, Context.MODE_PRIVATE);
         String url = prefs.getString(SettingsActivity.KEY_WEBHOOK_URL, "");
 
         if (url.isEmpty()) {
             Log.w(TAG, "No webhook URL configured. Text: " + text);
+            if (callback != null) callback.onError("No server URL configured");
             return;
         }
 
         JSONObject payload = new JSONObject();
         try {
-            payload.put("timestamp", System.currentTimeMillis() / 1000);
-            payload.put("text", text);
+            payload.put("question", text);
         } catch (JSONException e) {
             Log.e(TAG, "JSON construction failed", e);
+            if (callback != null) callback.onError("Failed to build request");
             return;
         }
 
@@ -59,13 +58,33 @@ public class WebhookClient {
             @Override
             public void onFailure(Call call, IOException e) {
                 Log.e(TAG, "Webhook request failed", e);
+                if (callback != null) callback.onError(e.getMessage());
             }
 
             @Override
             public void onResponse(Call call, Response response) throws IOException {
-                String body = response.body() != null ? response.body().string() : "";
-                Log.d(TAG, "Webhook response: " + response.code() + " body=" + body);
+                String bodyStr = response.body() != null ? response.body().string() : "";
+                Log.d(TAG, "Webhook response: " + response.code() + " body=" + bodyStr);
                 response.close();
+
+                if (callback == null) return;
+
+                if (!response.isSuccessful()) {
+                    callback.onError("Server responded with " + response.code());
+                    return;
+                }
+
+                try {
+                    JSONObject json = new JSONObject(bodyStr);
+                    String answer = json.optString("answer", "");
+                    if (answer.isEmpty()) {
+                        callback.onError("Empty answer in response");
+                    } else {
+                        callback.onAnswer(answer);
+                    }
+                } catch (JSONException e) {
+                    callback.onError("Couldn't parse server response");
+                }
             }
         });
     }
