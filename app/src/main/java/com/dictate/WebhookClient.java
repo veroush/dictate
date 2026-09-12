@@ -25,13 +25,23 @@ public class WebhookClient {
 
     public interface AnswerCallback {
         void onAnswer(String answer);
+        void onIgnored(); // session gate swallowed this on purpose -- not an error
         void onError(String message);
     }
 
-    public static void send(Context context, String text, AnswerCallback callback) {
+    public interface StatusCallback {
+        void onStatus(boolean timedOut);
+        void onError(String message);
+    }
+
+    private static String getAnswerUrl(Context context) {
         SharedPreferences prefs = context.getSharedPreferences(
                 SettingsActivity.PREFS_NAME, Context.MODE_PRIVATE);
-        String url = prefs.getString(SettingsActivity.KEY_WEBHOOK_URL, "");
+        return prefs.getString(SettingsActivity.KEY_WEBHOOK_URL, "");
+    }
+
+    public static void send(Context context, String text, AnswerCallback callback) {
+        String url = getAnswerUrl(context);
 
         if (url.isEmpty()) {
             Log.w(TAG, "No webhook URL configured. Text: " + text);
@@ -48,6 +58,7 @@ public class WebhookClient {
             return;
         }
 
+        Log.d(TAG, "Sending question: " + text);
         RequestBody body = RequestBody.create(payload.toString(), JSON);
         Request request = new Request.Builder()
                 .url(url)
@@ -76,14 +87,64 @@ public class WebhookClient {
 
                 try {
                     JSONObject json = new JSONObject(bodyStr);
-                    String answer = json.optString("answer", "");
-                    if (answer.isEmpty()) {
-                        callback.onError("Empty answer in response");
+                    String source = json.optString("source", "");
+                    boolean hasAnswer = json.has("answer") && !json.isNull("answer");
+                    String answer = hasAnswer ? json.optString("answer", "") : "";
+
+                    if (!hasAnswer || answer.isEmpty()) {
+                        if ("session".equals(source)) {
+                            // Session gate deliberately swallowed this -- not an error.
+                            callback.onIgnored();
+                        } else {
+                            callback.onError("Empty answer in response");
+                        }
                     } else {
                         callback.onAnswer(answer);
                     }
                 } catch (JSONException e) {
                     callback.onError("Couldn't parse server response");
+                }
+            }
+        });
+    }
+
+    public static void checkSessionStatus(Context context, StatusCallback callback) {
+        String answerUrl = getAnswerUrl(context);
+        if (answerUrl.isEmpty()) {
+            if (callback != null) callback.onError("No server URL configured");
+            return;
+        }
+
+        String statusUrl = answerUrl.endsWith("/answer")
+                ? answerUrl.substring(0, answerUrl.length() - "/answer".length()) + "/session/status"
+                : answerUrl;
+
+        Request request = new Request.Builder().url(statusUrl).get().build();
+
+        client.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onFailure(Call call, IOException e) {
+                Log.w(TAG, "Session status check failed: " + e.getMessage());
+                if (callback != null) callback.onError(e.getMessage());
+            }
+
+            @Override
+            public void onResponse(Call call, Response response) throws IOException {
+                String bodyStr = response.body() != null ? response.body().string() : "";
+                response.close();
+                if (callback == null) return;
+
+                if (!response.isSuccessful()) {
+                    callback.onError("Server responded with " + response.code());
+                    return;
+                }
+
+                try {
+                    JSONObject json = new JSONObject(bodyStr);
+                    boolean timedOut = json.optBoolean("timed_out", false);
+                    callback.onStatus(timedOut);
+                } catch (JSONException e) {
+                    callback.onError("Couldn't parse status response");
                 }
             }
         });

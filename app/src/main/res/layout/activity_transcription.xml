@@ -31,4 +31,11 @@
         android:text="Settings"
         android:layout_marginTop="8dp" />
 
+    <Button
+        android:id="@+id/languageButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Language: English"
+        android:layout_marginTop="8dp" />
+
 </LinearLayout>
