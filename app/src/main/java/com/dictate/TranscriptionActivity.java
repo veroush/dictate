@@ -60,6 +60,12 @@ public class TranscriptionActivity extends Activity implements TextToSpeech.OnIn
     // of real silence passes.
     private boolean unlocked = false;
 
+    // Which action to resume once a just-requested RECORD_AUDIO permission
+    // is granted -- REQUEST_RECORD_AUDIO is fired from two different
+    // buttons now, and onRequestPermissionsResult needs to know which one
+    // asked so it doesn't start the wrong listening mode.
+    private boolean pendingBackgroundStart = false;
+
     private final Handler heartbeatHandler = new Handler(Looper.getMainLooper());
     private final Handler lockHandler = new Handler(Looper.getMainLooper());
     private final Runnable lockRunnable = this::lockSession;
@@ -140,8 +146,15 @@ public class TranscriptionActivity extends Activity implements TextToSpeech.OnIn
         // --- Stage 1: temporary test button for the background service ---
         Button backgroundToggleButton = findViewById(R.id.backgroundToggleButton);
         backgroundToggleButton.setOnClickListener(v -> {
-            Intent serviceIntent = new Intent(this, WakeWordListenerService.class);
-            ContextCompat.startForegroundService(this, serviceIntent);
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                    == PackageManager.PERMISSION_GRANTED) {
+                Intent serviceIntent = new Intent(this, WakeWordListenerService.class);
+                ContextCompat.startForegroundService(this, serviceIntent);
+            } else {
+                pendingBackgroundStart = true;
+                ActivityCompat.requestPermissions(this,
+                        new String[]{Manifest.permission.RECORD_AUDIO}, REQUEST_RECORD_AUDIO);
+            }
         });
 
         // --- set up the wake word engine ---
@@ -271,8 +284,15 @@ public class TranscriptionActivity extends Activity implements TextToSpeech.OnIn
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQUEST_RECORD_AUDIO) {
+            boolean wantsBackground = pendingBackgroundStart;
+            pendingBackgroundStart = false;
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                startListening();
+                if (wantsBackground) {
+                    Intent serviceIntent = new Intent(this, WakeWordListenerService.class);
+                    ContextCompat.startForegroundService(this, serviceIntent);
+                } else {
+                    startListening();
+                }
             } else {
                 transcriptionText.setText("Microphone permission is required to use Sidenote.");
             }
