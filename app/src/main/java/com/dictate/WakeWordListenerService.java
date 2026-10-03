@@ -46,6 +46,9 @@ public class WakeWordListenerService extends Service {
     private static final long WAKE_RESTART_DELAY_MS = 500;
     private static final long WAKE_RESTART_DELAY_AFTER_STOP_MS = 2500;
     private static final long WAKE_IGNORE_WINDOW_AFTER_STOP_MS = 1500;
+    // Wake-word engine fires a false detection ~0.4s after every start (seen in logs).
+    // Ignore detections for this long after each start. TUNE THIS.
+    private static final long WAKE_IGNORE_AFTER_START_MS = 1500;
 
     // ---- UI bridge (same process, so a static listener is enough) ----
     public interface UiListener {
@@ -76,6 +79,8 @@ public class WakeWordListenerService extends Service {
     private final Runnable wakeStartRunnable = new Runnable() {
         @Override
         public void run() {
+            wakeIgnoreUntil = Math.max(wakeIgnoreUntil,
+                    SystemClock.uptimeMillis() + WAKE_IGNORE_AFTER_START_MS);
             Log.d(TAG, "wakeWordBridge.start() now running");
             wakeWordBridge.start();
         }
@@ -300,6 +305,7 @@ public class WakeWordListenerService extends Service {
             resetLockTimer();
             beginRecognition();
         } else {
+            setNotif("Jarvis logged off -- say \"Hey Jarvis\"");
             long delay = SystemClock.uptimeMillis() < wakeIgnoreUntil
                     ? WAKE_RESTART_DELAY_AFTER_STOP_MS : WAKE_RESTART_DELAY_MS;
             switchToWakeWordListening(delay);
