@@ -14,34 +14,26 @@
         android:gravity="center"
         android:textSize="20sp"
         android:padding="16dp"
-        android:text="Tap Start to begin" />
-
-    <Button
-        android:id="@+id/toggleButton"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Start"
-        android:textSize="18sp"
-        android:padding="16dp" />
-
-    <Button
-        android:id="@+id/backgroundToggleButton"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Start Background Listening" />
+        android:text="Starting..." />
 
     <Button
         android:id="@+id/settingsButton"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Settings"
-        android:layout_marginTop="8dp" />
+        android:text="Settings" />
 
     <Button
         android:id="@+id/languageButton"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Language: English"
+        android:layout_marginTop="8dp" />
+
+    <Button
+        android:id="@+id/stopButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Stop Jarvis"
         android:layout_marginTop="8dp" />
 
 </LinearLayout>
