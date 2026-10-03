@@ -87,6 +87,14 @@ public class WebhookClient {
 
                 try {
                     JSONObject json = new JSONObject(bodyStr);
+                    JSONObject reminder = json.optJSONObject("reminder");
+                    if (reminder != null) {
+                        long delay = reminder.optLong("delay_seconds", 0);
+                        String reminderText = reminder.optString("text", "");
+                        if (delay > 0 && !reminderText.isEmpty()) {
+                            ReminderScheduler.schedule(context, reminderText, delay);
+                        }
+                    }
                     String source = json.optString("source", "");
                     boolean hasAnswer = json.has("answer") && !json.isNull("answer");
                     String answer = hasAnswer ? json.optString("answer", "") : "";
