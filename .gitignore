@@ -31,3 +31,10 @@ google-services.json
 # OS files
 .DS_Store
 Thumbs.db
+crash.txt
+crash_log.txt
+filtered.txt
+full.txt
+full_test.txt
+live_log.txt
+pidlog*.txt
